@@ -1,8 +1,10 @@
-__version__ = (1, 3, 3, 7)
+__version__ = (1, 4, 8, 8)
 
 # Author: @Timur2287g_orig
 # meta developer: @Timur2287g_orig
 # requires: aiohttp
+# meta banner: https://x0.at/U8id.jpg
+# meta pic: https://x0.at/U8id.jpg
 #
 # XActions
 # Автоматическая публикация репостов X в Telegram.
@@ -27,6 +29,7 @@ __version__ = (1, 3, 3, 7)
 
 
 import asyncio
+import hashlib
 import html
 import json
 import os
@@ -54,7 +57,7 @@ class XActions(loader.Module):
             "<blockquote expandable>"
             "<b>Команды:</b>\n"
             "▫️ <code>-xactions</code> — информация\n"
-            "▫️ <code>-xcheck</code> — проверить X репосты \n"
+            "▫️ <code>-xcheck</code> — проверить X репосты\n"
             "▫️ <code>-xlogin</code> — проверить X и авторизацию через cookie\n"
             "▫️ <code>-xreset</code> — сбросить историю\n"
             "▫️ <code>-xstart</code> — запустить автопроверку (автоматический xcheck)\n"
@@ -267,11 +270,8 @@ class XActions(loader.Module):
         self.published = 0
         self.errors = 0
 
-        # Не позволяет одновременно выполнять несколько check().
         self.check_lock = asyncio.Lock()
 
-        # Каталог временных файлов XActions.
-        # Все скачанные медиа находятся только здесь.
         self.temp_root = os.path.join(
             tempfile.gettempdir(),
             "xactions_media",
@@ -285,8 +285,6 @@ class XActions(loader.Module):
         self.client = client
         self.db = db
 
-        # Удаляем мусор, который мог остаться после аварийного
-        # завершения процесса/перезагрузки сервера.
         self.cleanup_temp_root()
 
     async def on_unload(self):
@@ -298,13 +296,6 @@ class XActions(loader.Module):
     # =========================================================
 
     def cleanup_temp_root(self):
-        """
-        Полностью удаляет временный каталог XActions.
-
-        Обычно файлы удаляются сразу после отправки через finally.
-        Этот метод дополнительно очищает остатки после аварийного
-        завершения процесса.
-        """
         try:
             if os.path.isdir(self.temp_root):
                 shutil.rmtree(
@@ -315,9 +306,6 @@ class XActions(loader.Module):
             pass
 
     def create_temp_dir(self):
-        """
-        Создаёт отдельный временный каталог для одной публикации.
-        """
         os.makedirs(
             self.temp_root,
             exist_ok=True,
@@ -329,9 +317,6 @@ class XActions(loader.Module):
         )
 
     def cleanup_temp_dir(self, path):
-        """
-        Удаляет временный каталог конкретной публикации.
-        """
         if not path:
             return
 
@@ -553,9 +538,7 @@ class XActions(loader.Module):
         )
 
         try:
-            result = json.loads(
-                stdout
-            )
+            result = json.loads(stdout)
         except Exception as e:
             raise RuntimeError(
                 "twitter-cli вернул некорректный JSON: "
@@ -575,7 +558,7 @@ class XActions(loader.Module):
                 str(
                     result.get(
                         "error",
-                        "twitter-cli сообщил об ошибке."
+                        "twitter-cli сообщил об ошибке.",
                     )
                 )
             )
@@ -699,9 +682,7 @@ class XActions(loader.Module):
                 + "\">Source</a>"
             )
 
-        return "\n".join(
-            lines
-        )
+        return "\n".join(lines)
 
     # =========================================================
     # MEDIA
@@ -792,9 +773,7 @@ class XActions(loader.Module):
                 content_type
             ]
 
-        path = urlparse(
-            url
-        ).path
+        path = urlparse(url).path
 
         extension = os.path.splitext(
             path
@@ -847,8 +826,7 @@ class XActions(loader.Module):
         async with aiohttp.ClientSession(
             timeout=timeout,
             headers={
-                "User-Agent":
-                    "Mozilla/5.0",
+                "User-Agent": "Mozilla/5.0",
             },
         ) as session:
 
@@ -877,15 +855,11 @@ class XActions(loader.Module):
                 extension = (
                     self.extension_from_content_type(
                         content_type,
-                        str(
-                            response.url
-                        ),
+                        str(response.url),
                         media_type,
                     )
                 )
 
-                # Файл получает реальное расширение.
-                # Telethon сможет корректно определить тип медиа.
                 filename = (
                     f"media_{index}"
                     + extension
@@ -900,9 +874,7 @@ class XActions(loader.Module):
                     path,
                     "wb",
                 ) as file:
-                    file.write(
-                        data
-                    )
+                    file.write(data)
 
                 return path, extension
 
@@ -944,8 +916,6 @@ class XActions(loader.Module):
                 tweet
             )
 
-        # Отдельный каталог для каждой публикации.
-        # После завершения send_post он полностью удаляется.
         temp_dir = None
 
         downloaded = []
@@ -957,9 +927,8 @@ class XActions(loader.Module):
             for index, (
                 media_type,
                 url,
-            ) in enumerate(
-                media
-            ):
+            ) in enumerate(media):
+
                 try:
                     path, extension = (
                         await self.download_media(
@@ -1014,9 +983,8 @@ class XActions(loader.Module):
                 media_type,
                 path,
                 extension,
-            ) in enumerate(
-                downloaded
-            ):
+            ) in enumerate(downloaded):
+
                 await self.client.send_file(
                     chat_id,
                     path,
@@ -1036,11 +1004,6 @@ class XActions(loader.Module):
             return True
 
         finally:
-            # ВАЖНО:
-            # Временные файлы удаляются независимо от того,
-            # успешно Telegram отправил медиа или произошла ошибка.
-            #
-            # После каждого поста каталог post_* полностью удаляется.
             self.cleanup_temp_dir(
                 temp_dir
             )
@@ -1050,15 +1013,6 @@ class XActions(loader.Module):
     # =========================================================
 
     async def check(self):
-        # Один lock защищает всю операцию:
-        #
-        # get_posts()
-        # -> определение новых ID
-        # -> отправка
-        # -> сохранение seen
-        #
-        # Поэтому ручной -xcheck и автоматический xstart
-        # не могут одновременно обработать один и тот же репост.
         async with self.check_lock:
 
             posts = await self.get_posts()
@@ -1074,6 +1028,7 @@ class XActions(loader.Module):
             reposts = {}
 
             for post in posts:
+
                 if not isinstance(
                     post,
                     dict,
@@ -1093,9 +1048,104 @@ class XActions(loader.Module):
                 if not post_id:
                     continue
 
+                post_id = str(
+                    post_id
+                )
+
+                # =============================================
+                # Создаём fingerprint поста
+                # =============================================
+
+                author = post.get(
+                    "author",
+                    {},
+                )
+
+                if not isinstance(
+                    author,
+                    dict,
+                ):
+                    author = {}
+
+                author_id = str(
+                    author.get(
+                        "id",
+                        "",
+                    )
+                )
+
+                created_at = str(
+                    post.get(
+                        "createdAtISO",
+                        post.get(
+                            "createdAt",
+                            "",
+                        ),
+                    )
+                )
+
+                text = str(
+                    post.get(
+                        "text",
+                        "",
+                    )
+                )
+
+                media = post.get(
+                    "media",
+                    [],
+                )
+
+                media_urls = []
+
+                if isinstance(
+                    media,
+                    list,
+                ):
+                    for item in media:
+
+                        if not isinstance(
+                            item,
+                            dict,
+                        ):
+                            continue
+
+                        url = item.get(
+                            "url"
+                        )
+
+                        if url:
+                            media_urls.append(
+                                str(url)
+                            )
+
+                fingerprint_source = (
+                    author_id
+                    + "|"
+                    + created_at
+                    + "|"
+                    + text
+                    + "|"
+                    + "|".join(
+                        media_urls
+                    )
+                )
+
+                fingerprint = (
+                    "fp:"
+                    + hashlib.sha256(
+                        fingerprint_source.encode(
+                            "utf-8"
+                        )
+                    ).hexdigest()
+                )
+
                 reposts[
-                    str(post_id)
-                ] = post
+                    post_id
+                ] = {
+                    "post": post,
+                    "fingerprint": fingerprint,
+                }
 
             current = set(
                 reposts.keys()
@@ -1103,11 +1153,36 @@ class XActions(loader.Module):
 
             seen = self.get_seen()
 
-            # Первый запуск:
-            # существующие репосты только запоминаются.
+            seen_fingerprints = {
+                str(value)
+                for value in seen
+                if str(value).startswith(
+                    "fp:"
+                )
+            }
+
+            # =============================================
+            # ПЕРВЫЙ ЗАПУСК
+            # =============================================
+
             if not self.is_initialized():
+
+                baseline = set()
+
+                for post_id in current:
+
+                    baseline.add(
+                        post_id
+                    )
+
+                    baseline.add(
+                        reposts[
+                            post_id
+                        ]["fingerprint"]
+                    )
+
                 self.save_seen(
-                    current
+                    baseline
                 )
 
                 self.set_initialized(
@@ -1125,24 +1200,43 @@ class XActions(loader.Module):
                     "base": True,
                 }
 
-            new_ids = [
-                post_id
-                for post_id in current
-                if post_id not in seen
-            ]
+            # =============================================
+            # ПОИСК НОВЫХ
+            # =============================================
 
-            # От старых к новым.
+            new_ids = []
+
+            for post_id in current:
+
+                # Уже видели этот ID.
+                if post_id in seen:
+                    continue
+
+                fingerprint = reposts[
+                    post_id
+                ]["fingerprint"]
+
+                # Уже видели точно такой же пост,
+                # даже если X/twitter-cli дал ему другой ID.
+                if fingerprint in seen_fingerprints:
+                    continue
+
+                new_ids.append(
+                    post_id
+                )
+
             new_ids.reverse()
+
+            # =============================================
+            # ОТПРАВКА
+            # =============================================
 
             sent = 0
 
-            # Только успешно отправленные ID добавляются
-            # в историю. Если Telegram или media загрузка
-            # упали, пост можно будет повторить при следующей
-            # проверке.
             successfully_processed = set()
 
             for post_id in new_ids:
+
                 self.checked += 1
 
                 try:
@@ -1154,15 +1248,25 @@ class XActions(loader.Module):
                         )
 
                     ok = await self.send_post(
-                        reposts[post_id]
+                        reposts[
+                            post_id
+                        ]["post"]
                     )
 
                     if ok:
                         sent += 1
                         self.published += 1
 
+                        # Сохраняем и ID,
+                        # и fingerprint.
                         successfully_processed.add(
                             post_id
+                        )
+
+                        successfully_processed.add(
+                            reposts[
+                                post_id
+                            ]["fingerprint"]
                         )
 
                 except Exception:
@@ -1171,6 +1275,10 @@ class XActions(loader.Module):
                 await asyncio.sleep(
                     0.5
                 )
+
+            # =============================================
+            # СОХРАНЕНИЕ ИСТОРИИ
+            # =============================================
 
             self.save_seen(
                 seen
@@ -1189,6 +1297,7 @@ class XActions(loader.Module):
     # =========================================================
 
     async def auto_loop(self):
+
         while self.running:
 
             try:
@@ -1216,6 +1325,7 @@ class XActions(loader.Module):
                 break
 
     async def start_loop(self):
+
         if self.running:
             return False
 
@@ -1228,6 +1338,7 @@ class XActions(loader.Module):
         return True
 
     async def stop_loop(self):
+
         self.running = False
 
         task = self.task
@@ -1238,13 +1349,13 @@ class XActions(loader.Module):
 
             try:
                 await task
+
             except asyncio.CancelledError:
                 pass
+
             except Exception:
                 pass
 
-        # На всякий случай очищаем временный каталог
-        # после остановки автопроверки.
         self.cleanup_temp_root()
 
         return True
@@ -1261,7 +1372,9 @@ class XActions(loader.Module):
 
         await utils.answer(
             message,
-            self.strings["info"],
+            self.strings[
+                "info"
+            ],
         )
 
     # =========================================================
@@ -1276,13 +1389,17 @@ class XActions(loader.Module):
 
         await utils.answer(
             message,
-            self.strings["checking"],
+            self.strings[
+                "checking"
+            ],
         )
 
         try:
+
             result = await self.check()
 
             if result["base"]:
+
                 await utils.answer(
                     message,
                     self.strings[
@@ -1291,15 +1408,18 @@ class XActions(loader.Module):
                         result["total"]
                     ),
                 )
+
                 return
 
             if result["found"] == 0:
+
                 await utils.answer(
                     message,
                     self.strings[
                         "no_new"
                     ],
                 )
+
                 return
 
             await utils.answer(
@@ -1318,6 +1438,7 @@ class XActions(loader.Module):
             )
 
         except Exception as e:
+
             await utils.answer(
                 message,
                 self.strings[
@@ -1340,6 +1461,7 @@ class XActions(loader.Module):
         """— проверить X"""
 
         try:
+
             posts = await self.get_posts()
 
             await utils.answer(
@@ -1352,6 +1474,7 @@ class XActions(loader.Module):
             )
 
         except Exception as e:
+
             await utils.answer(
                 message,
                 self.strings[
@@ -1373,9 +1496,8 @@ class XActions(loader.Module):
     async def xreset(self, message):
         """— сбросить историю"""
 
-        # Останавливаем возможную текущую проверку,
-        # чтобы reset не произошёл посреди обработки постов.
         async with self.check_lock:
+
             self.db.set(
                 self.name,
                 "seen",
@@ -1406,27 +1528,27 @@ class XActions(loader.Module):
         """— запустить автопроверку"""
 
         if self.running:
+
             await utils.answer(
                 message,
                 self.strings[
                     "already_started"
                 ],
             )
+
             return
 
-        # Создаём базовую точку ДО запуска фонового цикла.
-        #
-        # Это также проходит через check_lock, поэтому если
-        # в этот момент выполняется ручной -xcheck, две проверки
-        # не смогут одновременно обработать один набор ID.
         if not self.is_initialized():
+
             try:
+
                 result = await self.check()
 
                 if result["base"]:
                     pass
 
             except Exception as e:
+
                 await utils.answer(
                     message,
                     self.strings[
@@ -1437,6 +1559,7 @@ class XActions(loader.Module):
                         )
                     ),
                 )
+
                 return
 
         interval = max(
@@ -1473,12 +1596,14 @@ class XActions(loader.Module):
         """— остановить автопроверку"""
 
         if not self.running:
+
             await utils.answer(
                 message,
                 self.strings[
                     "not_started"
                 ],
             )
+
             return
 
         await self.stop_loop()
@@ -1540,13 +1665,16 @@ class XActions(loader.Module):
         ).strip()
 
         if not raw_chat_id:
+
             await utils.answer(
                 message,
                 "❌ <b>RepostsChat не указан.</b>",
             )
+
             return
 
         try:
+
             chat_id = int(
                 raw_chat_id
             )
@@ -1566,6 +1694,7 @@ class XActions(loader.Module):
             )
 
         except Exception as e:
+
             await utils.answer(
                 message,
                 self.strings[
